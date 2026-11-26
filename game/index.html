@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky Courier — Alpine Ring Run</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1c2c;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #eaf6ff;
+    text-shadow: 0 1px 3px rgba(0,0,0,.7); user-select: none; }
+  .panel { background: rgba(8, 24, 38, .55); border: 1px solid rgba(150, 210, 255, .35);
+    border-radius: 8px; padding: 6px 10px; backdrop-filter: blur(2px); }
+  #hud-left { position: absolute; top: 10px; left: 10px; display: flex; gap: 8px; }
+  #hud-right { position: absolute; top: 10px; right: 10px; display: flex; gap: 8px; }
+  .gauge { min-width: 86px; text-align: center; }
+  .gauge .label { font-size: 10px; letter-spacing: .14em; color: #9fd4ff; }
+  .gauge .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .gauge .unit { font-size: 10px; color: #9fd4ff; }
+  #compass { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    width: 300px; height: 44px; overflow: hidden; text-align: center; }
+  #compass canvas { display: block; }
+  #compass .hdg { font-size: 15px; font-weight: 700; margin-top: -2px; }
+  #attitude-box { position: absolute; left: 10px; bottom: 10px; }
+  #attitude { display: block; border-radius: 50%; border: 2px solid rgba(150,210,255,.5); }
+  #throttle-box { position: absolute; right: 12px; bottom: 10px; width: 34px; height: 120px; }
+  #throttle-fill { position: absolute; left: 0; bottom: 0; width: 100%; background: linear-gradient(#ffd166, #ff7b2f); border-radius: 4px 4px 0 0; }
+  #throttle-box .label { position: absolute; top: -18px; left: -13px; width: 60px; text-align: center; font-size: 10px; letter-spacing: .12em; color: #9fd4ff; }
+  #rings { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+    font-size: 15px; font-weight: 700; letter-spacing: .06em; }
+  #msg { position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%);
+    font-size: 34px; font-weight: 800; letter-spacing: .04em; color: #ffe9a8;
+    text-shadow: 0 2px 10px rgba(0,0,0,.8); opacity: 0; transition: opacity .25s; white-space: nowrap; }
+  #warn { position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
+    font-size: 20px; font-weight: 800; color: #ff5a4e; letter-spacing: .08em;
+    text-shadow: 0 2px 8px rgba(0,0,0,.8); opacity: 0; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(rgba(6,18,30,.25), rgba(6,18,30,.62)); pointer-events: auto; }
+  #overlay .card { text-align: center; color: #f2f8ff; max-width: 620px; padding: 28px 34px;
+    background: rgba(8, 24, 38, .72); border: 1px solid rgba(150,210,255,.4); border-radius: 14px; }
+  #overlay h1 { margin: 0 0 4px; font-size: 44px; letter-spacing: .06em; color: #ffd166; }
+  #overlay h2 { margin: 0 0 10px; font-size: 17px; font-weight: 400; color: #bfe3ff; letter-spacing: .18em; }
+  #overlay p { margin: 8px 0; font-size: 15px; line-height: 1.5; }
+  #overlay .keys { font-size: 13px; color: #9fd4ff; }
+  #overlay .keys b { color: #fff; background: rgba(255,255,255,.14); border-radius: 4px; padding: 1px 6px; }
+  #overlay button { margin-top: 14px; font-size: 17px; font-weight: 700; letter-spacing: .05em;
+    color: #08222f; background: #ffd166; border: none; border-radius: 8px; padding: 12px 30px; cursor: pointer; }
+  #overlay button:hover { background: #ffdf8a; }
+  #overlay .score { font-size: 22px; font-weight: 700; color: #ffe9a8; }
+  /* Screenshot framing: the title card steps aside so the plane stays in frame. */
+  #overlay.shot-left { justify-content: flex-start; padding-left: 48px; }
+  #overlay.shot-left .card { max-width: 460px; text-align: left; padding: 20px 24px; }
+  #overlay.shot-left h1 { font-size: 34px; }
+  .hidden { display: none !important; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #err { position: absolute; left: 0; bottom: 0; color: #f66; font-size: 11px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="game" aria-label="Sky Courier: fly the Kestrel through the alpine rings"></canvas>
+<div id="hud" class="hidden">
+  <div id="hud-left">
+    <div class="panel gauge"><div class="label">AIRSPEED</div><div class="value"><span id="ias">0</span><span class="unit"> kt</span></div></div>
+    <div class="panel gauge"><div class="label">ALTITUDE</div><div class="value"><span id="alt">0</span><span class="unit"> ft</span></div></div>
+    <div class="panel gauge"><div class="label">VERT SPEED</div><div class="value"><span id="vs">0</span><span class="unit"> fpm</span></div></div>
+  </div>
+  <div id="compass" class="panel"><canvas id="compass-canvas" width="280" height="26"></canvas><div class="hdg"><span id="hdg">000</span>&deg;</div></div>
+  <div id="hud-right">
+    <div class="panel gauge"><div class="label">TIME</div><div class="value"><span id="time">0:00</span></div></div>
+    <div class="panel gauge"><div class="label">SCORE</div><div class="value"><span id="score">0</span></div></div>
+    <div class="panel gauge"><div class="label">FUEL</div><div class="value"><span id="fuel">100</span><span class="unit">%</span></div></div>
+  </div>
+  <div id="attitude-box" class="panel"><canvas id="attitude" width="120" height="120"></canvas></div>
+  <div id="throttle-box" class="panel"><div class="label">THR</div><div id="throttle-fill" style="height:0%"></div></div>
+  <div id="rings" class="panel">RINGS <span id="ring-count">0 / 8</span> &nbsp;·&nbsp; NEXT <span id="ring-next">—</span></div>
+  <div id="msg"></div>
+  <div id="warn"></div>
+</div>
+<div id="overlay"><div class="card" id="overlay-card"></div></div>
+<p id="status" role="status" aria-live="polite"></p>
+<div id="err"></div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
